@@ -10,7 +10,7 @@ __version__ = 1.0
 
 import argparse
 import os.path
-from addGradientInfill import process_gcode, InfillType, MIN_FLOW, MAX_FLOW, GRADIENT_THICKNESS, GRADIENT_DISCRETIZATION
+from addGradientInfill import GCode, InfillType, MIN_FLOW, MAX_FLOW, GRADIENT_THICKNESS, GRADIENT_DISCRETIZATION
 
 SCRIPT_DESCRIPTION = (
     "This script allows adding gradient infill to a gcode file produced by Cura slicer.\n"
@@ -24,6 +24,8 @@ INFILL_TYPE_HELP = (
     "Set 1 or \"SMALL_SEGMENTS\" for an infill method with small segments like honeycomb or gyroid.\n"
     "Set 2 or \"LINEAR\" for linear infill like rectilinear or triangles. Default: SMALL_SEGMENTS"
 )
+
+GRADIENT_DISCRETIZATION = ("")
 
 GRADIENT_DISCRETIZATION_HELP = (
     "only applicable for linear infills; number of segments within the gradient"
@@ -105,6 +107,8 @@ if __name__ == "__main__":
     else:
         output_path = args.output.name
 
-    process_gcode(
+    program = GCode(
         input_path, output_path, args.infill_type, args.max_flow, args.min_flow, args.thickness, args.discretization
     )
+
+    program.run()

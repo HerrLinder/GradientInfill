@@ -11,7 +11,7 @@ from collections import namedtuple
 from enum import Enum
 from typing import List, Tuple
 
-__version__ = '1.0'
+__version__ = '1.0.1.1'
 
 class InfillType(Enum):
     """Enum for infill type."""
@@ -39,7 +39,31 @@ Point2D = namedtuple('Point2D', 'x y')
 Segment = namedtuple('Segment', 'point1 point2')
 
 
+"""
+Simplify
 
+; layer 12, Z = 3.680
+; feature inner perimeter
+; feature outer perimeter
+; feature infill
+; layer 13, Z = 4.000
+
+
+Cura
+;MESH:NONMESH
+G0 F300 X218.928 Y121.176 Z3.52
+G0 F9000 X224.033 Y141.677
+G0 X228.248 Y154.581
+G0 X289.844 Y315.1
+;TIME_ELAPSED:9657.948732
+;LAYER:10
+;TYPE:WALL-INNER
+;MESH:Pico VG-single.stl
+;TYPE:WALL-OUTER
+;TYPE:FILL
+;MESH:NONMESH
+G0 F300 X284.42 Y266.642 Z3.84
+"""
 
 
 def dist(segment: Segment, point: Point2D) -> float:
@@ -163,9 +187,9 @@ def is_begin_layer_line(line: str) -> bool:
         bool: True if the line is the start of a layer section
     """
 
-    if SLICER_TYPE == Slicer.SIMPLIFY
+    if SLICER_TYPE == Slicer.SIMPLIFY:
         return line.startswith("; layer")
-    else if SLICER_TYPE == Slicer.CURA
+    elif SLICER_TYPE == Slicer.CURA:
         return line.startswith(";LAYER")
 
 
@@ -179,9 +203,9 @@ def is_begin_inner_wall_line(line: str) -> bool:
         bool: True if the line is the start of an inner wall section
     """
 
-    if SLICER_TYPE == Slicer.SIMPLIFY
+    if SLICER_TYPE == Slicer.SIMPLIFY:
         return line.startswith("; feature inner perimeter")
-    else if SLICER_TYPE == Slicer.CURA
+    elif  SLICER_TYPE == Slicer.CURA:
         return line.startswith(";TYPE:WALL-INNER")
 
 
@@ -195,10 +219,10 @@ def is_end_inner_wall_line(line: str) -> bool:
         bool: True if the line is the start of an outer wall section
     """
 
-    if SLICER_TYPE == Slicer.SIMPLIFY
+    if SLICER_TYPE == Slicer.SIMPLIFY:
         return line.startswith("; feature outer perimeter")
-    else if SLICER_TYPE == Slicer.CURA
-        return line.startswith(";TYPE:WALL-OUTER")
+    elif  SLICER_TYPE == Slicer.CURA:
+        return line.startswith(";TYPE:WALL-OUTER") or line.startswith(";TYPE:FILL")
 
 
 def is_extrusion_line(line: str) -> bool:
@@ -222,11 +246,25 @@ def is_begin_infill_segment_line(line: str) -> bool:
     Returns:
         bool: True if the line is the start of an infill section
     """
-        if SLICER_TYPE == Slicer.SIMPLIFY
+    if SLICER_TYPE == Slicer.SIMPLIFY:
         return line.startswith("; feature infill")
-    else if SLICER_TYPE == Slicer.CURA
+    elif  SLICER_TYPE == Slicer.CURA:
         return line.startswith(";TYPE:FILL")
 
+def is_feature_Start(line: str) -> bool:
+    """Check if current line is the start of an infill.
+
+    Args:
+        line (str): Gcode line
+
+    Returns:
+        bool: True if the line is the start of an infill section
+    """
+    if SLICER_TYPE == Slicer.SIMPLIFY:
+        return line.startswith("; feature")
+    elif  SLICER_TYPE == Slicer.CURA:
+        return line.startswith(";TYPE")
+    
 def isSimplify(line: str) -> bool:
     """Check if current line is created by Simplify3D(R)
  
@@ -249,158 +287,212 @@ def isCura(line: str) -> bool:
     """
     return line.startswith(";Generated with Cura")
 
+class GCode:
 
-def process_gcode(
-    input_file_name: str,
-    output_file_name: str,
-    infill_type: InfillType,
-    max_flow: float,
-    min_flow: float,
-    gradient_thickness: float,
-    gradient_discretization: float,
-) -> None:
-    """Parse input Gcode file and modify infill portions with an extrusion width gradient."""
-    currentSection = Section.NOTHING
-    lastPosition = Point2D(-10000, -10000)
-    gradientDiscretizationLength = gradient_thickness / gradient_discretization
+    _writtenToFile = False
+    _input_file_name = ""
+    _output_file_name = ""
+    _infill_type = ""
+    _max_flow = 0.0
+    _min_flow = 0.0
+    _gradient_thickness = 0.0
+    _gradient_discretization = 0.0
+    _infill_type = InfillType.NOTHING
+    _gcodeFile = None 
 
-    foundFirstLine = False
-    
-    with open(input_file_name, "r") as gcodeFile, open(output_file_name, "w+") as outputFile:
-
-        for currentLine in gcodeFile:
-
-            #Lets check if already found the first layer
-            if not foundFirstLine:
-                #Lets find the slicer type
-                if SLICER_TYPE == Slicer.NOTHING:
-                    if isSimplify(currentLine):
-                        SLICER_TYPE = Slicer.SIMPLIFY
-                    else if isCura(currentLine):
-                        SLICER_TYPE = Slicer.CURA
-                    continue
-                else not foundFirstLine:
-                    if is_begin_layer_line(currentLine) :
-                        foundFirstLine = True
-                    else:
-                        continue
-
-            # start at the first detected Layer line
+    def __init__(self,
+        input_file_name: str,
+        output_file_name: str,
+        infill_type: InfillType,
+        max_flow: float,
+        min_flow: float,
+        gradient_thickness: float,
+        gradient_discretization: float):
+            _input_file_name = input_file_name
+            _output_file_name = output_file_name
+            _infill_type = infill_type
+            _max_flow = max_flow
+            _min_flow = min_flow
+            _gradient_thickness = gradient_thickness
+            _gradient_discretization = gradient_discretization
             
-            writtenToFile = 0
+    
+    def process_Non_Linear(self):
+        # gyroid or honeycomb
+        if _infill_type == InfillType.SMALL_SEGMENTS:
+            shortestDistance = min_distance_from_segment(
+                Segment(lastPosition, currentPosition), perimeterSegments
+            )
+
+            outPutLine = ""
+            if shortestDistance < _gradient_thickness:
+                for element in splitLine:
+                    if "E" in element:
+                        newE = float(element[1:]) * mapRange(
+                            (0, _gradient_thickness), (_max_flow / 100, _min_flow / 100), shortestDistance
+                        )
+                        outPutLine = outPutLine + "E" + str(round(newE, 5))
+                    else:
+                        outPutLine = outPutLine + element + " "
+                outPutLine = outPutLine + "\n"
+                outputFile.write(outPutLine)
+                _writtenToFile = True
+
+    def process_Linear(self):
+        if is_extrusion_line(currentLine):
+            currentPosition = getXY(currentLine)
+            splitLine = currentLine.split(" ")
+
+            if _infill_type == InfillType.LINEAR:
+                # find extrusion length
+                for element in splitLine:
+                    if "E" in element:
+                        extrusionLength = float(element[1:])
+                        
+                segmentLength = get_points_distance(lastPosition, currentPosition)
+                segmentSteps = segmentLength / gradientDiscretizationLength
+                extrusionLengthPerSegment = extrusionLength / segmentSteps
+                
+                segmentDirection = Point2D(
+                    (currentPosition.x - lastPosition.x) / segmentLength * gradientDiscretizationLength,
+                    (currentPosition.y - lastPosition.y) / segmentLength * gradientDiscretizationLength,
+                )
+                
+                if segmentSteps >= 2:
+                    for step in range(int(segmentSteps)):
+                        segmentEnd = Point2D(
+                            lastPosition.x + segmentDirection.x, lastPosition.y + segmentDirection.y
+                        )
+                        shortestDistance = min_distance_from_segment(
+                            Segment(lastPosition, segmentEnd), perimeterSegments
+                        )
+                        if shortestDistance < _gradient_thickness:
+                            segmentExtrusion = extrusionLengthPerSegment * mapRange(
+                                (0, _gradient_thickness), (_max_flow / 100, _min_flow / 100), shortestDistance
+                            )
+                        else:
+                            segmentExtrusion = extrusionLengthPerSegment * _min_flow / 100
+
+                        outputFile.write(get_extrusion_command(segmentEnd.x, segmentEnd.y, segmentExtrusion))
+                        _writtenToFile = True
+
+                        lastPosition = segmentEnd
+                    # MissingSegment
+                    segmentLengthRatio = get_points_distance(lastPosition, currentPosition) / segmentLength
+
+                    outputFile.write(
+                        get_extrusion_command(
+                            currentPosition.x,
+                            currentPosition.y,
+                            segmentLengthRatio * extrusionLength * _max_flow / 100,
+                        )
+                    )
+                    _writtenToFile = True
+                else:
+                    outPutLine = ""
+                    for element in splitLine:
+                        if "E" in element:
+                            outPutLine = outPutLine + "E" + str(round(extrusionLength * _max_flow / 100, 5))
+                        else:
+                            outPutLine = outPutLine + element + " "
+                    outPutLine = outPutLine + "\n"
+                    outputFile.write(outPutLine)
+                    
+                    _writtenToFile = True
+
+    def run(self) -> None:
+
+        with open(input_file_name, "r") as gcodeFile, open(_output_file_name, "w+") as outputFile:
+            _gcodeFile = gcodeFile
+            SLICER_TYPE = Slicer.NOTHING
+            
+            for currentLine in gcodeFile.readline():
+                determineSlicer(currentLine)
+                
+                if SLICER_TYPE != Slicer.NOTHING:
+                    break
+                
+            if SLICER_TYPE == Slicer.NOTHING:
+                # write message
+                return
+
+            process_gcode()
+
+    def determineSlicer(self, currentLine: str) -> None:
+        #; G-Code generated by Simplify3D(R)
+        # ;Generated with Cura
+
+        if "G-Code generated by Simplify3D" in currentLine:
+            SLICER_TYPE = Slicer.SIMPLIFY
+        elif "Generated with Cura" in currentLine:
+            SLICER_TYPE = Slicer.CURA
+
+    def process_gcode(self ) -> None:
+
+    
+        """Parse input Gcode file and modify infill portions with an extrusion width gradient."""
+        currentSection = Section.NOTHING
+        lastPosition = Point2D(-10000, -10000)
+        gradientDiscretizationLength = _gradient_thickness / _gradient_discretization
+
+        foundFirstLine = False
+      
+        for currentLine in _gcodeFile:
+                
+            writtenToFile = False
+                             
             if is_begin_layer_line(currentLine):
                 perimeterSegments = []
-
+                continue
+            
             if is_begin_inner_wall_line(currentLine):
                 currentSection = Section.INNER_WALL
+                continue
 
             if currentSection == Section.INNER_WALL and is_extrusion_line(currentLine):
                 perimeterSegments.append(Segment(getXY(currentLine), lastPosition))
-
-            if is_end_inner_wall_line(currentLine):
-                currentSection = Section.NOTHING
+                continue
 
             if is_begin_infill_segment_line(currentLine):
                 currentSection = Section.INFILL
                 outputFile.write(currentLine)
                 continue
 
+            if is_end_inner_wall_line(currentLine):
+                currentSection = Section.NOTHING
+                outputFile.write(currentLine)
+                continue
+            
+            if ";" in currentLine :
+                outputFile.write(currentLine)
+                continue
+            
             if currentSection == Section.INFILL:
                 if "F" in currentLine and "G1" in currentLine:
                     # python3.6+ f-string variant:
                     # outputFile.write("G1 F{ re.search(r"F(\d*\.?\d*)", currentLine).group(1)) }\n"
                     searchSpeed = re.search(r"F(\d*\.?\d*)", currentLine)
+                    
                     if searchSpeed:
                         outputFile.write("G1 F{}\n".format(searchSpeed.group(1)))
                     else:
                         raise SyntaxError(f'Gcode file parsing error for line {currentLine}')
-                if "E" in currentLine and "G1" in currentLine and " X" in currentLine and "Y" in currentLine:
-                    currentPosition = getXY(currentLine)
-                    splitLine = currentLine.split(" ")
+                    
+                    process_Linear()
 
-                    if infill_type == InfillType.LINEAR:
-                        # find extrusion length
-                        for element in splitLine:
-                            if "E" in element:
-                                extrusionLength = float(element[1:])
-                                
-                        segmentLength = get_points_distance(lastPosition, currentPosition)
-                        segmentSteps = segmentLength / gradientDiscretizationLength
-                        extrusionLengthPerSegment = extrusionLength / segmentSteps
-                        
-                        segmentDirection = Point2D(
-                            (currentPosition.x - lastPosition.x) / segmentLength * gradientDiscretizationLength,
-                            (currentPosition.y - lastPosition.y) / segmentLength * gradientDiscretizationLength,
-                        )
-                        
-                        if segmentSteps >= 2:
-                            for step in range(int(segmentSteps)):
-                                segmentEnd = Point2D(
-                                    lastPosition.x + segmentDirection.x, lastPosition.y + segmentDirection.y
-                                )
-                                shortestDistance = min_distance_from_segment(
-                                    Segment(lastPosition, segmentEnd), perimeterSegments
-                                )
-                                if shortestDistance < gradient_thickness:
-                                    segmentExtrusion = extrusionLengthPerSegment * mapRange(
-                                        (0, gradient_thickness), (max_flow / 100, min_flow / 100), shortestDistance
-                                    )
-                                else:
-                                    segmentExtrusion = extrusionLengthPerSegment * min_flow / 100
+                    if not _writtenToFile:   
+                        process_Non_Linear()
 
-                                outputFile.write(get_extrusion_command(segmentEnd.x, segmentEnd.y, segmentExtrusion))
+                # line with move
+                if " X" in currentLine and " Y" in currentLine and ("G1" in currentLine or "G0" in currentLine):
+                    lastPosition = getXY(currentLine)
 
-                                lastPosition = segmentEnd
-                            # MissingSegment
-                            segmentLengthRatio = get_points_distance(lastPosition, currentPosition) / segmentLength
+                # write uneditedLine
+                if not writtenToFile:
+                    outputFile.write(currentLine)
 
-                            outputFile.write(
-                                get_extrusion_command(
-                                    currentPosition.x,
-                                    currentPosition.y,
-                                    segmentLengthRatio * extrusionLength * max_flow / 100,
-                                )
-                            )
-                        else:
-                            outPutLine = ""
-                            for element in splitLine:
-                                if "E" in element:
-                                    outPutLine = outPutLine + "E" + str(round(extrusionLength * max_flow / 100, 5))
-                                else:
-                                    outPutLine = outPutLine + element + " "
-                            outPutLine = outPutLine + "\n"
-                            outputFile.write(outPutLine)
-                        writtenToFile = 1
-
-                    # gyroid or honeycomb
-                    if infill_type == InfillType.SMALL_SEGMENTS:
-                        shortestDistance = min_distance_from_segment(
-                            Segment(lastPosition, currentPosition), perimeterSegments
-                        )
-
-                        outPutLine = ""
-                        if shortestDistance < gradient_thickness:
-                            for element in splitLine:
-                                if "E" in element:
-                                    newE = float(element[1:]) * mapRange(
-                                        (0, gradient_thickness), (max_flow / 100, min_flow / 100), shortestDistance
-                                    )
-                                    outPutLine = outPutLine + "E" + str(round(newE, 5))
-                                else:
-                                    outPutLine = outPutLine + element + " "
-                            outPutLine = outPutLine + "\n"
-                            outputFile.write(outPutLine)
-                            writtenToFile = 1
-                if ";" in currentLine:
-                    currentSection = Section.NOTHING
-
-            # line with move
-            if " X" in currentLine and " Y" in currentLine and ("G1" in currentLine or "G0" in currentLine):
-                lastPosition = getXY(currentLine)
-
-            # write uneditedLine
-            if writtenToFile == 0:
-                outputFile.write(currentLine)
+#end of GCode
+                
 
                 
 # EDIT this section for your creation parameters
@@ -420,6 +512,9 @@ GRADIENT_DISCRETIZATION = 4.0  # only applicable for linear infills; number of s
 # End edit
 
 if __name__ == '__main__':
-    process_gcode(
+    program = GCode(
         INPUT_FILE_NAME, OUTPUT_FILE_NAME, INFILL_TYPE, MAX_FLOW, MIN_FLOW, GRADIENT_THICKNESS, GRADIENT_DISCRETIZATION
     )
+
+    program.run()
+
